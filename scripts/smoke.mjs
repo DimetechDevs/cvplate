@@ -1,0 +1,46 @@
+// Browser smoke test against `vite preview` on :4173: node scripts/smoke.mjs <screenshot dir>
+import { chromium } from 'playwright'
+const out = process.argv[2]
+const browser = await chromium.launch(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {})
+const errors = []
+const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 })
+page.on('pageerror', (e) => errors.push('pageerror: ' + e.message))
+page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()) })
+await page.goto('http://localhost:4173/')
+await page.waitForTimeout(800)
+await page.screenshot({ path: `${out}/home.png` })
+await page.getByRole('button', { name: 'Open an example' }).click()
+await page.waitForSelector('.preview-stack canvas', { timeout: 20000 })
+await page.waitForTimeout(800)
+await page.screenshot({ path: `${out}/editor.png` })
+// Change template via modal
+await page.getByRole('button', { name: /Meridian/ }).first().click()
+await page.getByRole('button', { name: /Continental/ }).click()
+await page.waitForTimeout(1500)
+await page.screenshot({ path: `${out}/continental.png` })
+// Downloads
+const [pdf] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'PDF' }).click()])
+await pdf.saveAs(`${out}/${pdf.suggestedFilename()}`)
+const [docx] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Word', exact: true }).click()])
+await docx.saveAs(`${out}/${docx.suggestedFilename()}`)
+// Persistence: reload keeps draft
+await page.reload()
+await page.waitForSelector('.preview-stack canvas', { timeout: 20000 })
+console.log('after reload name:', await page.inputValue('.name-input'))
+// Mobile
+const m = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 })
+m.on('pageerror', (e) => errors.push('m pageerror: ' + e.message))
+await m.goto('http://localhost:4173/')
+await m.waitForTimeout(600)
+await m.screenshot({ path: `${out}/m-home.png` })
+await m.getByRole('button', { name: 'Open an example' }).click()
+await m.waitForTimeout(600)
+await m.screenshot({ path: `${out}/m-edit.png` })
+await m.getByRole('tab', { name: 'Preview' }).click()
+await m.waitForSelector('.preview-stack canvas', { timeout: 20000 })
+await m.waitForTimeout(600)
+await m.screenshot({ path: `${out}/m-preview.png` })
+const sw = await m.evaluate(() => document.documentElement.scrollWidth)
+console.log('mobile scrollWidth', sw)
+console.log('errors', JSON.stringify(errors, null, 1))
+await browser.close()
